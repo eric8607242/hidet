@@ -15,7 +15,7 @@ from typing import List, Union
 import torch
 
 from hidet.ir.type import DataType
-from hidet.graph.tensor import Tensor
+from hidet.graph.tensor import Tensor, full_like
 from hidet.graph import ops
 from hidet.runtime.device import instantiate_device
 from .interpreter import register_method
@@ -200,11 +200,54 @@ def tensor_expand(self: Tensor, *sizes: int) -> Tensor:
     return ops.broadcast(self, sizes)
 
 
+@register_method(torch.Tensor.pow)
+def tensor_pow(self: Tensor, exponent: Union[Number, Tensor]) -> Tensor:
+    if isinstance(exponent, (int, float, bool)):
+        exponent = full_like(self, exponent)
+    return ops.pow(self, exponent)
+
+
+
 @register_method(torch.Tensor.masked_fill)
 def tensor_masked_fill(self: Tensor, mask: Tensor, value: float) -> Tensor:
     return ops.where(mask, ops.full([], value, dtype=self.dtype, device=self.device), self)
 
 
+@register_method(torch.Tensor.masked_fill_)
+def tensor_masked_fill_(self: Tensor, mask: Tensor, value: float):
+    # https://github.com/pytorch/pytorch/blob/d06b93b0c70a6745724974f62aa2f1999d22b282/torch/_refs/__init__.py#L4998
+    b = ops.where(mask, ops.full([], value, dtype=self.dtype, device=self.device), self)
+    self.copy_(b)
+
+
 @register_method(torch.Tensor.flatten)
 def tensor_flatten(self: Tensor, start_dim=0, end_dim=-1):
     return ops.flatten(self, start_dim=start_dim, end_dim=end_dim)
+
+
+@register_method(torch.Tensor.mean)
+def tensor_mean_v1(self: Tensor, *, dtype: Optional[DataType]=None) -> Tensor:
+    output = ops.mean(x, dims=list(range(len(x.shape))), keep_dim=True)
+    if isinstance(dtype, DataType):
+        output = output.astype(dtype)
+    return output
+
+
+@register_method(torch.Tensor.mean)
+def tensor_mean_v2(
+    x: Tensor, dim, keepdim=False, *, dtype: Optional[DataType]=None, out: Optional[Tensor]=None
+) -> Tensor:
+    if out is not None:
+        raise NotImplementedError("hidet: does not support torch.mean(..., out=...)")
+    output = ops.mean(x, dims=dim, keep_dim=keepdim)
+    if isinstance(dtype, DataType):
+        output = output.astype(dtype)
+    return output
+
+
+@register_method(torch.Tensor.repeat)
+def tensor_repeat(self: Tensor, *sizes: Union[int]) -> Tensor:
+    sizes: List[int] = list(sizes)
+    assert len(sizes) >= len(self.shape)
+
+    return ops.tile(self, sizes)

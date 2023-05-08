@@ -794,6 +794,15 @@ class Tensor:
             else:
                 raise ValueError('Please use .detach() to detach a trace variable first.')
 
+    def copy_(self, src):
+        self._device = src.device
+        self._shape = src.shape
+        self._dtype = src.dtype
+        self._storage = src.storage
+        self._layout = src.layout
+        self._trace = src.trace
+
+
     def copy(self) -> Tensor:
         """Create a copy of current tensor.
 
@@ -980,6 +989,7 @@ def empty(shape, dtype='float32', device='cpu', layout=None):
     ret: Tensor
         The created tensor.
     """
+
     dtype = data_type(dtype)
     num_bytes = prod(shape) * dtype.nbytes
     storage = Storage.new(device, num_bytes)

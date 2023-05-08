@@ -137,7 +137,7 @@ def full(
     dtype: Optional[Union[DataType, str]] = None,
     device: Union[Device, str] = 'cpu',
 ) -> Tensor:
-    return FullOp(shape, value, data_type(dtype), device).get_output(0)
+    return FullOp(shape, value, dtype, device).get_output(0)
 
 
 def arange(start, /, stop=None, step=1, *, dtype=None, device='cpu') -> Tensor:

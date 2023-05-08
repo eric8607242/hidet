@@ -94,7 +94,7 @@ def adaptive_avg_pool2d(x: Tensor, output_size):
 
 
 @register_function(torch.nn.functional.relu)
-def relu(x: Tensor, inplace: bool):
+def relu(x: Tensor, inplace: bool=False):
     # if inplace:
     #     warnings.warn_once('hidet: relu with inplace=True is not supported. Treat as inplace=False.')
     _ = inplace
@@ -140,6 +140,15 @@ def bilinear(x_1: Tensor, x_2: Tensor, weight: Tensor, bias: Optional[Tensor]):
         y = y + bias
     return y
 
+@register_function(operator.lt)
+def lt(x: Tensor, y: Tensor):
+    return ops.less(x, y)
+
+
+@register_function(operator.le)
+def le(x: Tensor, y: Tensor):
+    return ops.less_equal(x, y)
+
 
 @register_function(operator.add)
 def add(x: Tensor, y: Tensor):
@@ -149,6 +158,11 @@ def add(x: Tensor, y: Tensor):
 @register_function(operator.iadd)
 def iadd(x: Tensor, y: Tensor):
     return ops.add(x, y)
+
+
+@register_function(torch.rsqrt)
+def rsqrt(x: Tensor):
+    return ops.rsqrt(x)
 
 
 @register_function(torch.sin)
@@ -314,9 +328,10 @@ def neg(x: Tensor):
 @register_function(torch.nn.functional.softmax)
 @register_method(torch.Tensor.softmax)
 def softmax(x: Tensor, dim: int, _stacklevel: int = 3, dtype=None):
-    if dtype is not None:
-        raise NotImplementedError("dtype is not None")
-    return ops.softmax(x, dim)
+    output = ops.softmax(x, dim)
+    if isinstance(dtype, DataType):
+        output = output.astype(dtype)
+    return output
 
 
 @register_function(operator.matmul)
@@ -507,8 +522,8 @@ def relu6(x: Tensor, inplace: bool = False):
 
 @register_function(torch.arange)
 def arange(
-    start: Number,
-    end: Number,
+    start: Number = 0,
+    end: Number = None,
     step: Number = 1,
     *,
     out: Optional[Tensor] = None,
@@ -518,6 +533,9 @@ def arange(
     pin_memory: Optional[bool] = False,
     requires_grad: Optional[bool] = False,
 ):
+    if end is None:
+        end = start
+        start = 0
     if out is not None:
         raise NotImplementedError("hidet: does not support torch.arange(..., out=..., ...)")
     if layout is not None:
@@ -558,6 +576,8 @@ def pow(base: Tensor, exponent: Union[Number, Tensor]):
 
 @register_function(torch.full)
 def full(size, fill_value, *, out=None, dtype=None, layout=None, device=None, requires_grad=False):
+    if isinstance(fill_value, Tensor):
+        fill_value = fill_value.item()
     if out is not None:
         raise NotImplementedError("hidet: does not support torch.full(..., out=..., ...)")
     if layout not in [None, torch.strided]:
@@ -661,21 +681,21 @@ def exp(x: Tensor, *, out: Optional[Tensor] = None) -> Tensor:
 
 
 @register_function(torch.nn.functional.hardsigmoid)
-def hardsigmoid(x: Tensor, inplace: bool):
+def hardsigmoid(x: Tensor, inplace: bool=False):
     if inplace:
         warnings.warn_once('hidet: hardsigmoid with inplace=True is not supported. Treat as inplace=False.')
     return ops.hardsigmoid(x)
 
 
 @register_function(torch.nn.functional.silu)
-def silu(x: Tensor, inplace: bool):
+def silu(x: Tensor, inplace: bool=False):
     if inplace:
         warnings.warn_once('hidet: silu with inplace=True is not supported. Treat as inplace=False.')
     return ops.silu(x)
 
 
 @register_function(torch.nn.functional.hardswish)
-def hardswish(x: Tensor, inplace: bool):
+def hardswish(x: Tensor, inplace: bool=False):
     if inplace:
         warnings.warn_once('hidet: hardswish with inplace=True is not supported. Treat as inplace=False.')
     return ops.hardswish(x)
@@ -687,7 +707,7 @@ def softmin(x: Tensor, axis: int):
 
 
 @register_function(torch.nn.functional.softplus)
-def softplus(x: Tensor, beta: int, threshold: int):
+def softplus(x: Tensor, beta: int=1, threshold: int=20):
     return ops.softplus(x, beta, threshold)
 
 
@@ -702,7 +722,7 @@ def tanhshrink(x: Tensor):
 
 
 @register_function(torch.nn.functional.hardshrink)
-def hardshrink(x: Tensor, lambda_val: float):
+def hardshrink(x: Tensor, lambda_val: float=0.5):
     return ops.hardshrink(x, lambda_val)
 
 
@@ -712,7 +732,7 @@ def softsign(x: Tensor):
 
 
 @register_function(torch.nn.functional.celu)
-def celu(x: Tensor, alpha: float):
+def celu(x: Tensor, alpha: float=1., inplace=False):
     return ops.celu(x, alpha)
 
 
@@ -722,7 +742,7 @@ def logsigmoid(x: Tensor):
 
 
 @register_function(torch.nn.functional.mish)
-def mish(x: Tensor, inplace: bool = False):
+def mish(x: Tensor, inplace: bool=False):
     if inplace:
         warnings.warn_once('hidet: mish with inplace=True is not supported. Treat as inplace=False.')
     return ops.multiply(x, ops.tanh(ops.softplus(x, 1, 20)))
@@ -765,6 +785,7 @@ def torch_max_v2(
     if out is not None:
         raise NotImplementedError("hidet: does not support torch.max(..., out=...)")
     if isinstance(other, Tensor):
+        other = other.to(device=x.device)
         return ops.maximum(x, other)
     else:
         return torch_max_v3(x, other)
@@ -795,6 +816,7 @@ def torch_min_v2(
     if out is not None:
         raise NotImplementedError("hidet: does not support torch.min(..., out=...)")
     if isinstance(other, Tensor):
+        other = other.to(device=x.device)
         return ops.minimum(x, other)
     else:
         return torch_min_v3(x, other)
@@ -809,3 +831,24 @@ def torch_min_v3(
     values = ops.min(x, dims=dim, keep_dim=keepdim)
     indices = ops.argmin(x, dim=dim, keep_dim=keepdim)
     return values, indices
+
+
+@register_function(torch.mean)
+def torch_mean_v1(x: Tensor, *, dtype: Optional[DataType]=None) -> Tensor:
+    output = ops.mean(x, dims=list(range(len(x.shape))), keep_dim=True)
+    if isinstance(dtype, DataType):
+        output = output.astype(dtype)
+    return output
+
+
+@register_function(torch.mean)
+def torch_mean_v2(
+    x: Tensor, dim, keepdim=False, *, dtype: Optional[DataType]=None, out: Optional[Tensor]=None
+) -> Tensor:
+    if out is not None:
+        raise NotImplementedError("hidet: does not support torch.mean(..., out=...)")
+    output = ops.mean(x, dims=dim, keep_dim=keepdim)
+    if isinstance(dtype, DataType):
+        output = output.astype(dtype)
+    return output
+
